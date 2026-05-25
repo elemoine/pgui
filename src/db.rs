@@ -1,6 +1,8 @@
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
 
+const NULL_REPR: &str = "NULL";
+
 /// Execute a SQL query against the database pool.
 pub async fn execute_query(sql: &str, pool: PgPool) -> color_eyre::Result<Vec<PgRow>> {
     eprintln!("  Envoi de la requête...");
@@ -22,27 +24,27 @@ pub fn cell_to_string(row: &PgRow, idx: usize) -> String {
             .try_get::<Option<i16>, _>(idx)
             .ok()
             .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
+            .map_or(NULL_REPR.into(), |v| v.to_string()),
         "INT4" => row
             .try_get::<Option<i32>, _>(idx)
             .ok()
             .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
+            .map_or(NULL_REPR.into(), |v| v.to_string()),
         "INT8" => row
             .try_get::<Option<i64>, _>(idx)
             .ok()
             .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
+            .map_or(NULL_REPR.into(), |v| v.to_string()),
         "TEXT" | "VARCHAR" | "BPCHAR" => row
             .try_get::<Option<String>, _>(idx)
             .ok()
             .flatten()
-            .unwrap_or_else(|| "NULL".into()),
+            .map_or(NULL_REPR.into(), |v| v),
         "BOOL" => row
             .try_get::<Option<bool>, _>(idx)
             .ok()
             .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
+            .map_or(NULL_REPR.into(), |v| v.to_string()),
         _ => "?".into(),
     }
 }

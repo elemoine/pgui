@@ -10,6 +10,9 @@ use tokio::time::interval;
 use crate::ui::{Focus, RightView, MockTable, MockColumn, MockIndex};
 use crate::db;
 
+const DATABASE_URL: &str = "postgres://alma:almaalma@localhost:5432/alma_db";
+const TICK_INTERVAL_MS: u64 = 33;
+
 /// Application.
 pub struct App {
     /// Is the application running?
@@ -72,7 +75,7 @@ impl App {
 
     /// Initialize the app with a database pool.
     pub async fn with_db(mut self) -> color_eyre::Result<Self> {
-        match PgPool::connect("postgres://alma:almaalma@localhost:5432/alma_db").await {
+        match PgPool::connect(DATABASE_URL).await {
             Ok(pool) => {
                 eprintln!("✓ Connecté à la base de données");
                 self.db_pool = Some(pool);
@@ -87,21 +90,23 @@ impl App {
     /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         let mut event_stream = EventStream::new();
-        let mut tick_interval = interval(Duration::from_millis(33)); // ~30 FPS
+        let mut tick_interval = interval(Duration::from_millis(TICK_INTERVAL_MS));
 
         loop {
-            terminal.draw(|frame| {
-                crate::ui::render(frame, &mut self);
-            })?;
-
             tokio::select! {
                 _ = tick_interval.tick() => {
                     self.tick();
+                    terminal.draw(|frame| {
+                        crate::ui::render(frame, &mut self);
+                    })?;
                 }
                 Some(Ok(event)) = event_stream.next() => {
                     match event {
                         CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                             self.handle_key_events(key_event)?;
+                            terminal.draw(|frame| {
+                                crate::ui::render(frame, &mut self);
+                            })?;
                         }
                         _ => {}
                     }
@@ -127,6 +132,9 @@ impl App {
                         }
                     }
                     self.query_task = None;
+                    terminal.draw(|frame| {
+                        crate::ui::render(frame, &mut self);
+                    })?;
                 }
             }
 
@@ -206,30 +214,19 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.cursor > 0 {
-                    let mut prev = self.cursor - 1;
-                    while !self.editor.is_char_boundary(prev) {
-                        prev -= 1;
-                    }
+                    let prev = prev_char_boundary(&self.editor, self.cursor);
                     self.editor.replace_range(prev..self.cursor, "");
                     self.cursor = prev;
                 }
             }
             KeyCode::Left => {
                 if self.cursor > 0 {
-                    let mut prev = self.cursor - 1;
-                    while !self.editor.is_char_boundary(prev) {
-                        prev -= 1;
-                    }
-                    self.cursor = prev;
+                    self.cursor = prev_char_boundary(&self.editor, self.cursor);
                 }
             }
             KeyCode::Right => {
                 if self.cursor < self.editor.len() {
-                    let mut next = self.cursor + 1;
-                    while next < self.editor.len() && !self.editor.is_char_boundary(next) {
-                        next += 1;
-                    }
-                    self.cursor = next;
+                    self.cursor = next_char_boundary(&self.editor, self.cursor);
                 }
             }
             KeyCode::Home => self.cursor = line_start(&self.editor, self.cursor),
@@ -337,6 +334,22 @@ impl App {
             eprintln!("✗ Base de données non connectée");
         }
     }
+}
+
+fn prev_char_boundary(text: &str, pos: usize) -> usize {
+    let mut p = pos.saturating_sub(1);
+    while p > 0 && !text.is_char_boundary(p) {
+        p -= 1;
+    }
+    p
+}
+
+fn next_char_boundary(text: &str, pos: usize) -> usize {
+    let mut p = pos + 1;
+    while p < text.len() && !text.is_char_boundary(p) {
+        p += 1;
+    }
+    p
 }
 
 fn line_start(text: &str, cursor: usize) -> usize {

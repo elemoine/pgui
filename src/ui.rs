@@ -10,6 +10,8 @@ use sqlx::{Column, Row as _};
 use crate::app::App;
 use crate::db;
 
+const MAX_VISIBLE_COLS: usize = 10;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Editor,
@@ -120,56 +122,56 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             .block(block);
             frame.render_widget(p, area);
         }
-        Some(result) if result.is_empty() => {
-            let p = Paragraph::new(Text::from(vec![
-                Line::from(""),
-                Line::styled(
-                    "  (query executed successfully, but returned no rows)",
-                    Style::new().fg(Color::DarkGray),
-                ),
-            ]))
-            .block(block);
-            frame.render_widget(p, area);
-        }
-        Some(result) if !result.is_empty() => {
-            let cols = result[0].columns();
-            let max_rows = area.height.saturating_sub(3) as usize;
-            let max_cols = 10;
-            let col_offset = app.results_scroll_x as usize;
+        Some(result) => {
+            if result.is_empty() {
+                let p = Paragraph::new(Text::from(vec![
+                    Line::from(""),
+                    Line::styled(
+                        "  (query executed successfully, but returned no rows)",
+                        Style::new().fg(Color::DarkGray),
+                    ),
+                ]))
+                .block(block);
+                frame.render_widget(p, area);
+            } else {
+                let cols = result[0].columns();
+                let num_cols = cols.len();
+                let max_rows = area.height.saturating_sub(3) as usize;
+                let col_offset = app.results_scroll_x as usize;
 
-            let header = Row::new(
-                cols.iter()
-                    .skip(col_offset)
-                    .take(max_cols)
-                    .map(|c| {
-                        Cell::from(c.name().to_string())
-                            .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                let header = Row::new(
+                    cols.iter()
+                        .skip(col_offset)
+                        .take(MAX_VISIBLE_COLS)
+                        .map(|c| {
+                            Cell::from(c.name().to_string())
+                                .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                        })
+                );
+
+                let rows: Vec<Row> = result
+                    .iter()
+                    .skip(app.results_scroll as usize)
+                    .take(max_rows)
+                    .map(|row| {
+                        Row::new(
+                            (0..num_cols)
+                                .skip(col_offset)
+                                .take(MAX_VISIBLE_COLS)
+                                .map(|i| Cell::from(db::cell_to_string(row, i)))
+                        )
                     })
-            );
+                    .collect();
 
-            let rows: Vec<Row> = result
-                .iter()
-                .skip(app.results_scroll as usize)
-                .take(max_rows)
-                .map(|row| {
-                    Row::new(
-                        (0..row.columns().len())
-                            .skip(col_offset)
-                            .take(max_cols)
-                            .map(|i| Cell::from(db::cell_to_string(row, i)))
-                    )
-                })
-                .collect();
-
-            let n = cols.len().saturating_sub(col_offset).min(max_cols).max(1);
-            let widths: Vec<Constraint> = (0..n).map(|_| Constraint::Fill(1)).collect();
-            let table = Table::new(rows, widths)
-                .header(header)
-                .block(block)
-                .highlight_symbol(" ▶ ");
-            frame.render_widget(table, area);
+                let n = num_cols.saturating_sub(col_offset).min(MAX_VISIBLE_COLS).max(1);
+                let widths: Vec<Constraint> = (0..n).map(|_| Constraint::Fill(1)).collect();
+                let table = Table::new(rows, widths)
+                    .header(header)
+                    .block(block)
+                    .highlight_symbol(" ▶ ");
+                frame.render_widget(table, area);
+            }
         }
-        Some(_) => {}
     }
 }
 
@@ -247,5 +249,3 @@ fn render_help(frame: &mut Frame, area: Rect) {
     .style(Style::new().fg(Color::DarkGray));
     frame.render_widget(help, area);
 }
-
-// Use db::cell_to_string for formatting cell values
