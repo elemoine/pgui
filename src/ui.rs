@@ -7,7 +7,42 @@ use ratatui::{
 };
 use sqlx::{Column, Row as _};
 
-use crate::app::{App, Focus, RightView};
+use crate::app::App;
+use crate::db;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    Editor,
+    Results,
+    Right,
+}
+
+#[derive(Clone, Copy)]
+pub enum RightView {
+    List,
+    Details(usize),
+}
+
+#[derive(Clone)]
+pub struct MockColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+}
+
+#[derive(Clone)]
+pub struct MockIndex {
+    pub name: String,
+    pub columns: Vec<String>,
+    pub unique: bool,
+}
+
+#[derive(Clone)]
+pub struct MockTable {
+    pub name: String,
+    pub columns: Vec<MockColumn>,
+    pub indexes: Vec<MockIndex>,
+}
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     let [body, help] =
@@ -98,20 +133,40 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
         }
         Some(result) if !result.is_empty() => {
             let cols = result[0].columns();
-            let header = Row::new(cols.iter().map(|c| {
-                Cell::from(c.name().to_string())
-                    .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-            }));
+            let max_rows = area.height.saturating_sub(3) as usize;
+            let max_cols = 10;
+            let col_offset = app.results_scroll_x as usize;
+
+            let header = Row::new(
+                cols.iter()
+                    .skip(col_offset)
+                    .take(max_cols)
+                    .map(|c| {
+                        Cell::from(c.name().to_string())
+                            .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                    })
+            );
+
             let rows: Vec<Row> = result
                 .iter()
                 .skip(app.results_scroll as usize)
+                .take(max_rows)
                 .map(|row| {
-                    Row::new((0..row.columns().len()).map(|i| Cell::from(cell_to_string(row, i))))
+                    Row::new(
+                        (0..row.columns().len())
+                            .skip(col_offset)
+                            .take(max_cols)
+                            .map(|i| Cell::from(db::cell_to_string(row, i)))
+                    )
                 })
                 .collect();
-            let n = cols.len().max(1);
+
+            let n = cols.len().saturating_sub(col_offset).min(max_cols).max(1);
             let widths: Vec<Constraint> = (0..n).map(|_| Constraint::Fill(1)).collect();
-            let table = Table::new(rows, widths).header(header).block(block);
+            let table = Table::new(rows, widths)
+                .header(header)
+                .block(block)
+                .highlight_symbol(" ▶ ");
             frame.render_widget(table, area);
         }
         Some(_) => {}
@@ -193,36 +248,4 @@ fn render_help(frame: &mut Frame, area: Rect) {
     frame.render_widget(help, area);
 }
 
-fn cell_to_string(row: &sqlx::postgres::PgRow, idx: usize) -> String {
-    use sqlx::{Column as _, TypeInfo as _};
-
-    let ty = row.columns()[idx].type_info().name();
-    match ty {
-        "INT2" => row
-            .try_get::<Option<i16>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
-        "INT4" => row
-            .try_get::<Option<i32>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
-        "INT8" => row
-            .try_get::<Option<i64>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
-        "TEXT" | "VARCHAR" | "BPCHAR" => row
-            .try_get::<Option<String>, _>(idx)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "NULL".into()),
-        "BOOL" => row
-            .try_get::<Option<bool>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or("NULL".into(), |v| v.to_string()),
-        _ => "?".into(),
-    }
-}
+// Use db::cell_to_string for formatting cell values

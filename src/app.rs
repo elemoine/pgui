@@ -1,50 +1,19 @@
-use crate::event::{AppEvent, Event, EventHandler};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, Event as CrosstermEvent, EventStream};
+use futures::StreamExt;
 use ratatui::widgets::ListState;
 use ratatui::DefaultTerminal;
-use sqlx::postgres::{PgConnection, PgRow};
-use sqlx::Connection as _;
+use sqlx::postgres::PgRow;
+use sqlx::{PgPool, Row};
+use std::time::Duration;
+use tokio::time::interval;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Focus {
-    Editor,
-    Results,
-    Right,
-}
-
-#[derive(Clone, Copy)]
-pub enum RightView {
-    List,
-    Details(usize),
-}
-
-#[derive(Clone)]
-pub struct MockColumn {
-    pub name: String,
-    pub data_type: String,
-    pub nullable: bool,
-}
-
-#[derive(Clone)]
-pub struct MockIndex {
-    pub name: String,
-    pub columns: Vec<String>,
-    pub unique: bool,
-}
-
-#[derive(Clone)]
-pub struct MockTable {
-    pub name: String,
-    pub columns: Vec<MockColumn>,
-    pub indexes: Vec<MockIndex>,
-}
+use crate::ui::{Focus, RightView, MockTable, MockColumn, MockIndex};
+use crate::db;
 
 /// Application.
 pub struct App {
     /// Is the application running?
     pub running: bool,
-    /// Event handler.
-    pub events: EventHandler,
     /// Current focus pane
     pub focus: Focus,
     /// SQL editor content
@@ -53,14 +22,20 @@ pub struct App {
     pub cursor: usize,
     /// Query results
     pub results: Option<Vec<PgRow>>,
-    /// Scroll position in results
+    /// Vertical scroll position in results
     pub results_scroll: u16,
+    /// Horizontal scroll position in results
+    pub results_scroll_x: u16,
     /// Available tables
     pub tables: Vec<MockTable>,
     /// Table list selection state
     pub table_list_state: ListState,
     /// Right pane view mode
     pub right_view: RightView,
+    /// Database connection pool
+    pub db_pool: Option<PgPool>,
+    /// Running query task
+    query_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<PgRow>>>>,
 }
 
 impl Default for App {
@@ -70,19 +45,21 @@ impl Default for App {
         if !tables.is_empty() {
             table_list_state.select(Some(0));
         }
-        let editor = String::from("SELECT id, email, created_at\nFROM users\nWHERE id = 1;");
-        let cursor = editor.len();
+        let editor = String::new();
+        let cursor = 0;
         Self {
             running: true,
-            events: EventHandler::new(),
             focus: Focus::Editor,
             editor,
             cursor,
             results: None,
             results_scroll: 0,
+            results_scroll_x: 0,
             tables,
             table_list_state,
             right_view: RightView::List,
+            db_pool: None,
+            query_task: None,
         }
     }
 }
@@ -93,26 +70,68 @@ impl App {
         Self::default()
     }
 
+    /// Initialize the app with a database pool.
+    pub async fn with_db(mut self) -> color_eyre::Result<Self> {
+        match PgPool::connect("postgres://alma:almaalma@localhost:5432/alma_db").await {
+            Ok(pool) => {
+                eprintln!("✓ Connecté à la base de données");
+                self.db_pool = Some(pool);
+            }
+            Err(e) => {
+                eprintln!("✗ Impossible de se connecter à la base de données: {}", e);
+            }
+        }
+        Ok(self)
+    }
+
     /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
-        while self.running {
+        let mut event_stream = EventStream::new();
+        let mut tick_interval = interval(Duration::from_millis(33)); // ~30 FPS
+
+        loop {
             terminal.draw(|frame| {
                 crate::ui::render(frame, &mut self);
             })?;
-            match self.events.next().await? {
-                Event::Tick => self.tick(),
-                Event::Crossterm(event) => match event {
-                    crossterm::event::Event::Key(key_event)
-                        if key_event.kind == KeyEventKind::Press =>
-                    {
-                        self.handle_key_events(key_event)?
+
+            tokio::select! {
+                _ = tick_interval.tick() => {
+                    self.tick();
+                }
+                Some(Ok(event)) = event_stream.next() => {
+                    match event {
+                        CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                            self.handle_key_events(key_event)?;
+                        }
+                        _ => {}
                     }
-                    _ => {}
-                },
-                Event::App(app_event) => match app_event {
-                    AppEvent::ExecuteQuery => self.execute_query().await?,
-                    AppEvent::Quit => self.quit(),
-                },
+                }
+                query_result = async {
+                    if let Some(task) = &mut self.query_task {
+                        task.await
+                    } else {
+                        std::future::pending().await
+                    }
+                }, if self.query_task.is_some() => {
+                    match query_result {
+                        Ok(Ok(rows)) => {
+                            self.results = Some(rows);
+                            self.results_scroll = 0;
+                            self.results_scroll_x = 0;
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("✗ Erreur requête: {}", e);
+                        }
+                        Err(e) => {
+                            eprintln!("✗ Erreur tâche: {}", e);
+                        }
+                    }
+                    self.query_task = None;
+                }
+            }
+
+            if !self.running {
+                break;
             }
         }
         Ok(())
@@ -120,26 +139,22 @@ impl App {
 
     /// Handles the key events and updates the state of [`App`].
     pub fn handle_key_events(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
-        if key_event.kind != KeyEventKind::Press {
-            return Ok(());
-        }
-
         let ctrl = key_event.modifiers.contains(KeyModifiers::CONTROL);
         match key_event.code {
             KeyCode::Char('q') if ctrl => {
-                self.events.send(AppEvent::Quit);
+                self.quit();
                 return Ok(());
             }
             KeyCode::Char('c') if ctrl => {
-                self.events.send(AppEvent::Quit);
+                self.quit();
                 return Ok(());
             }
             KeyCode::Char('r') if ctrl => {
-                self.events.send(AppEvent::ExecuteQuery);
+                self.spawn_query();
                 return Ok(());
             }
             KeyCode::F(5) => {
-                self.events.send(AppEvent::ExecuteQuery);
+                self.spawn_query();
                 return Ok(());
             }
             KeyCode::Tab => {
@@ -178,14 +193,6 @@ impl App {
         };
     }
 
-    async fn execute_query(&mut self) -> color_eyre::Result<()> {
-        let mut conn =
-            PgConnection::connect("postgres://alma:almaalma@localhost:5432/alma_db").await?;
-        let q = sqlx::query(&self.editor);
-        self.results = Some(q.fetch_all(&mut conn).await?);
-        self.results_scroll = 0;
-        Ok(())
-    }
 
     fn handle_editor_key(&mut self, key: KeyEvent) {
         match key.code {
@@ -238,6 +245,20 @@ impl App {
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.results_scroll = self.results_scroll.saturating_add(1);
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.results_scroll_x = self.results_scroll_x.saturating_sub(1);
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if let Some(result) = &self.results {
+                    if !result.is_empty() {
+                        let num_cols = result[0].columns().len();
+                        let max_offset = num_cols.saturating_sub(1);
+                        if self.results_scroll_x < max_offset as u16 {
+                            self.results_scroll_x = self.results_scroll_x.saturating_add(1);
+                        }
+                    }
+                }
             }
             KeyCode::PageUp => {
                 self.results_scroll = self.results_scroll.saturating_sub(5);
@@ -302,6 +323,19 @@ impl App {
     /// Set running to false to quit the application.
     pub fn quit(&mut self) {
         self.running = false;
+    }
+
+    fn spawn_query(&mut self) {
+        if let Some(pool) = &self.db_pool {
+            let editor = self.editor.clone();
+            let pool = pool.clone();
+            eprintln!("→ Exécution de la requête...");
+            self.query_task = Some(tokio::spawn(async move {
+                db::execute_query(&editor, pool).await
+            }));
+        } else {
+            eprintln!("✗ Base de données non connectée");
+        }
     }
 }
 
@@ -441,3 +475,4 @@ fn mock_tables() -> Vec<MockTable> {
         },
     ]
 }
+
