@@ -75,7 +75,7 @@ fn pane_block(title: &str, focused: bool) -> Block<'_> {
 
 fn render_editor(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Editor;
-    let block = pane_block("SQL Editor — Ctrl-R / F5 to run", focused);
+    let block = pane_block("SQL Editor — Ctrl-R / F5 to execute", focused);
     let inner = block.inner(area);
 
     let paragraph = Paragraph::new(app.editor.as_str()).block(block);
@@ -108,7 +108,7 @@ fn cursor_to_row_col(text: &str, cursor: usize) -> (u16, u16) {
 
 fn render_results(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Results;
-    let block = pane_block("Results", focused);
+    let block = pane_block("Query Results", focused);
 
     match &app.results {
         None => {
@@ -185,7 +185,7 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
                 .map(|t| ListItem::new(t.name.as_str()))
                 .collect();
             let list = List::new(items)
-                .block(pane_block("Tables — Enter to inspect", focused))
+                .block(pane_block("Tables — Press Enter to inspect", focused))
                 .highlight_symbol(" > ")
                 .highlight_style(
                     Style::new()
@@ -197,7 +197,7 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
         }
         RightView::Details(i) => {
             let table = &app.tables[i];
-            let title = format!("Table: {} — Esc to go back", table.name);
+            let title = format!("Table: {} — Press Esc to go back", table.name);
             let mut lines: Vec<Line> = Vec::new();
 
             lines.push(Line::styled(

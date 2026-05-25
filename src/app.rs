@@ -77,11 +77,11 @@ impl App {
     pub async fn with_db(mut self) -> color_eyre::Result<Self> {
         match PgPool::connect(DATABASE_URL).await {
             Ok(pool) => {
-                eprintln!("✓ Connecté à la base de données");
+                eprintln!("✓ Connected to database");
                 self.db_pool = Some(pool);
             }
             Err(e) => {
-                eprintln!("✗ Impossible de se connecter à la base de données: {}", e);
+                eprintln!("✗ Failed to connect to database: {}", e);
             }
         }
         Ok(self)
@@ -125,10 +125,10 @@ impl App {
                             self.results_scroll_x = 0;
                         }
                         Ok(Err(e)) => {
-                            eprintln!("✗ Erreur requête: {}", e);
+                            eprintln!("✗ Query error: {}", e);
                         }
                         Err(e) => {
-                            eprintln!("✗ Erreur tâche: {}", e);
+                            eprintln!("✗ Task error: {}", e);
                         }
                     }
                     self.query_task = None;
@@ -326,12 +326,12 @@ impl App {
         if let Some(pool) = &self.db_pool {
             let editor = self.editor.clone();
             let pool = pool.clone();
-            eprintln!("→ Exécution de la requête...");
+            eprintln!("→ Executing query...");
             self.query_task = Some(tokio::spawn(async move {
                 db::execute_query(&editor, pool).await
             }));
         } else {
-            eprintln!("✗ Base de données non connectée");
+            eprintln!("✗ Database not connected");
         }
     }
 }
