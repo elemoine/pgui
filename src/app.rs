@@ -1,17 +1,16 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, Event as CrosstermEvent, EventStream};
+use crossterm::event::{
+    Event as CrosstermEvent, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+};
 use futures::StreamExt;
 use ratatui::widgets::ListState;
 use ratatui::DefaultTerminal;
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
-use std::time::Duration;
-use tokio::time::interval;
 
-use crate::ui::{Focus, RightView, MockTable, MockColumn, MockIndex};
 use crate::db;
+use crate::ui::{Focus, MockColumn, MockIndex, MockTable, RightView};
 
 const DATABASE_URL: &str = "postgres://alma:almaalma@localhost:5432/alma_db";
-const TICK_INTERVAL_MS: u64 = 33;
 
 /// Application.
 pub struct App {
@@ -26,7 +25,7 @@ pub struct App {
     /// Query results
     pub results: Option<Vec<PgRow>>,
     /// Vertical scroll position in results
-    pub results_scroll: u16,
+    pub results_scroll_y: u16,
     /// Horizontal scroll position in results
     pub results_scroll_x: u16,
     /// Available tables
@@ -41,8 +40,9 @@ pub struct App {
     query_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<PgRow>>>>,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    /// Constructs a new instance of [`App`].
+    pub fn new() -> Self {
         let tables = mock_tables();
         let mut table_list_state = ListState::default();
         if !tables.is_empty() {
@@ -56,7 +56,7 @@ impl Default for App {
             editor,
             cursor,
             results: None,
-            results_scroll: 0,
+            results_scroll_y: 0,
             results_scroll_x: 0,
             tables,
             table_list_state,
@@ -64,13 +64,6 @@ impl Default for App {
             db_pool: None,
             query_task: None,
         }
-    }
-}
-
-impl App {
-    /// Constructs a new instance of [`App`].
-    pub fn new() -> Self {
-        Self::default()
     }
 
     /// Initialize the app with a database pool.
@@ -90,16 +83,13 @@ impl App {
     /// Run the application's main loop.
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         let mut event_stream = EventStream::new();
-        let mut tick_interval = interval(Duration::from_millis(TICK_INTERVAL_MS));
+
+        terminal.draw(|frame| {
+            crate::ui::render(frame, &mut self);
+        })?;
 
         loop {
             tokio::select! {
-                _ = tick_interval.tick() => {
-                    self.tick();
-                    terminal.draw(|frame| {
-                        crate::ui::render(frame, &mut self);
-                    })?;
-                }
                 Some(Ok(event)) = event_stream.next() => {
                     match event {
                         CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -121,7 +111,7 @@ impl App {
                     match query_result {
                         Ok(Ok(rows)) => {
                             self.results = Some(rows);
-                            self.results_scroll = 0;
+                            self.results_scroll_y = 0;
                             self.results_scroll_x = 0;
                         }
                         Ok(Err(e)) => {
@@ -201,7 +191,6 @@ impl App {
         };
     }
 
-
     fn handle_editor_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char(c) => {
@@ -238,10 +227,10 @@ impl App {
     fn handle_results_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.results_scroll = self.results_scroll.saturating_sub(1);
+                self.results_scroll_y = self.results_scroll_y.saturating_sub(1);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.results_scroll = self.results_scroll.saturating_add(1);
+                self.results_scroll_y = self.results_scroll_y.saturating_add(1);
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 self.results_scroll_x = self.results_scroll_x.saturating_sub(1);
@@ -258,10 +247,10 @@ impl App {
                 }
             }
             KeyCode::PageUp => {
-                self.results_scroll = self.results_scroll.saturating_sub(5);
+                self.results_scroll_y = self.results_scroll_y.saturating_sub(5);
             }
             KeyCode::PageDown => {
-                self.results_scroll = self.results_scroll.saturating_add(5);
+                self.results_scroll_y = self.results_scroll_y.saturating_add(5);
             }
             _ => {}
         }
@@ -313,9 +302,6 @@ impl App {
         };
         self.table_list_state.select(Some(i));
     }
-
-    /// Handles the tick event of the terminal.
-    pub fn tick(&self) {}
 
     /// Set running to false to quit the application.
     pub fn quit(&mut self) {
@@ -488,4 +474,3 @@ fn mock_tables() -> Vec<MockTable> {
         },
     ]
 }
-

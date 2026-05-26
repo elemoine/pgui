@@ -139,31 +139,31 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
                 let max_rows = area.height.saturating_sub(3) as usize;
                 let col_offset = app.results_scroll_x as usize;
 
-                let header = Row::new(
-                    cols.iter()
-                        .skip(col_offset)
-                        .take(MAX_VISIBLE_COLS)
-                        .map(|c| {
-                            Cell::from(c.name().to_string())
-                                .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
-                        })
-                );
+                let header = Row::new(cols.iter().skip(col_offset).take(MAX_VISIBLE_COLS).map(
+                    |c| {
+                        Cell::from(c.name().to_string())
+                            .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+                    },
+                ));
 
                 let rows: Vec<Row> = result
                     .iter()
-                    .skip(app.results_scroll as usize)
+                    .skip(app.results_scroll_y as usize)
                     .take(max_rows)
                     .map(|row| {
                         Row::new(
                             (0..num_cols)
                                 .skip(col_offset)
                                 .take(MAX_VISIBLE_COLS)
-                                .map(|i| Cell::from(db::cell_to_string(row, i)))
+                                .map(|i| Cell::from(db::cell_to_string(row, i))),
                         )
                     })
                     .collect();
 
-                let n = num_cols.saturating_sub(col_offset).min(MAX_VISIBLE_COLS).max(1);
+                let n = num_cols
+                    .saturating_sub(col_offset)
+                    .min(MAX_VISIBLE_COLS)
+                    .max(1);
                 let widths: Vec<Constraint> = (0..n).map(|_| Constraint::Fill(1)).collect();
                 let table = Table::new(rows, widths)
                     .header(header)
