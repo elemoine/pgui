@@ -15,36 +15,26 @@ pub async fn execute_query(sql: &str, pool: PgPool) -> color_eyre::Result<Vec<Pg
 }
 
 /// Format a cell value from a row.
-pub fn cell_to_string(row: &PgRow, idx: usize) -> String {
+pub fn format_column_value(row: &PgRow, idx: usize) -> String {
     use sqlx::{Column as _, TypeInfo as _};
 
-    let ty = row.columns()[idx].type_info().name();
-    match ty {
-        "INT2" => row
-            .try_get::<Option<i16>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or(NULL_REPR.into(), |v| v.to_string()),
-        "INT4" => row
-            .try_get::<Option<i32>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or(NULL_REPR.into(), |v| v.to_string()),
-        "INT8" => row
-            .try_get::<Option<i64>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or(NULL_REPR.into(), |v| v.to_string()),
-        "TEXT" | "VARCHAR" | "BPCHAR" => row
-            .try_get::<Option<String>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or(NULL_REPR.into(), |v| v),
-        "BOOL" => row
-            .try_get::<Option<bool>, _>(idx)
-            .ok()
-            .flatten()
-            .map_or(NULL_REPR.into(), |v| v.to_string()),
-        _ => "?".into(),
+    macro_rules! get {
+        ($ty:ty) => {
+            row.try_get::<Option<$ty>, _>(idx)
+                .ok()
+                .flatten()
+                .map_or(NULL_REPR.into(), |v| v.to_string())
+        };
+    }
+
+    match row.columns()[idx].type_info().name() {
+        "INT2"                        => get!(i16),
+        "INT4"                        => get!(i32),
+        "INT8"                        => get!(i64),
+        "FLOAT4"                      => get!(f32),
+        "FLOAT8"                      => get!(f64),
+        "BOOL"                        => get!(bool),
+        "TEXT" | "VARCHAR" | "BPCHAR" => get!(String),
+        _                             => "?".into(),
     }
 }

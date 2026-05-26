@@ -155,7 +155,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
                             (0..num_cols)
                                 .skip(col_offset)
                                 .take(MAX_VISIBLE_COLS)
-                                .map(|i| Cell::from(db::cell_to_string(row, i))),
+                                .map(|i| Cell::from(db::format_column_value(row, i))),
                         )
                     })
                     .collect();

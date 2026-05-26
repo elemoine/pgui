@@ -15,7 +15,7 @@ const DATABASE_URL: &str = "postgres://alma:almaalma@localhost:5432/alma_db";
 /// Application.
 pub struct App {
     /// Is the application running?
-    pub running: bool,
+    running: bool,
     /// Current focus pane
     pub focus: Focus,
     /// SQL editor content
@@ -35,7 +35,7 @@ pub struct App {
     /// Right pane view mode
     pub right_view: RightView,
     /// Database connection pool
-    pub db_pool: Option<PgPool>,
+    db_pool: Option<PgPool>,
     /// Running query task
     query_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<PgRow>>>>,
 }
