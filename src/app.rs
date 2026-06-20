@@ -200,23 +200,20 @@ impl App {
                 self.editor.insert(self.cursor, '\n');
                 self.cursor += 1;
             }
-            KeyCode::Backspace => {
-                if self.cursor > 0 {
+            KeyCode::Backspace
+                if self.cursor > 0 => {
                     let prev = prev_char_boundary(&self.editor, self.cursor);
                     self.editor.replace_range(prev..self.cursor, "");
                     self.cursor = prev;
                 }
-            }
-            KeyCode::Left => {
-                if self.cursor > 0 {
+            KeyCode::Left
+                if self.cursor > 0 => {
                     self.cursor = prev_char_boundary(&self.editor, self.cursor);
                 }
-            }
-            KeyCode::Right => {
-                if self.cursor < self.editor.len() {
+            KeyCode::Right
+                if self.cursor < self.editor.len() => {
                     self.cursor = next_char_boundary(&self.editor, self.cursor);
                 }
-            }
             KeyCode::Home => self.cursor = line_start(&self.editor, self.cursor),
             KeyCode::End => self.cursor = line_end(&self.editor, self.cursor),
             _ => {}
