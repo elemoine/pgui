@@ -75,7 +75,7 @@ fn pane_block(title: &str, focused: bool) -> Block<'_> {
 
 fn render_editor(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Editor;
-    let block = pane_block("SQL Editor — Ctrl-R / F5 to execute", focused);
+    let block = pane_block("SQL Editor — Ctrl-R to execute — Ctrl-W to clear", focused);
     let inner = block.inner(area);
 
     let paragraph = Paragraph::new(app.editor.as_str()).block(block);
@@ -115,7 +115,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
             let p = Paragraph::new(Text::from(vec![
                 Line::from(""),
                 Line::styled(
-                    "  (no results yet — press Ctrl-R or F5 to run the query)",
+                    "  (no results yet — press Ctrl-R to run the query)",
                     Style::new().fg(Color::DarkGray),
                 ),
             ]))
@@ -244,7 +244,7 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_help(frame: &mut Frame, area: Rect) {
     let help = Paragraph::new(
-        " Tab/Shift-Tab: switch pane │ Ctrl-R or F5: run │ Enter: open table │ Esc: back │ Ctrl-Q: quit",
+        " Tab/Shift-Tab: switch pane │ Ctrl-R: run │ Enter: open table │ Esc: back │ Ctrl-Q: quit",
     )
     .style(Style::new().fg(Color::DarkGray));
     frame.render_widget(help, area);

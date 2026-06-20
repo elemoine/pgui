@@ -150,8 +150,8 @@ impl App {
                 self.spawn_query();
                 return Ok(());
             }
-            KeyCode::F(5) => {
-                self.spawn_query();
+            KeyCode::Char('w') if ctrl => {
+                self.clear_editor();
                 return Ok(());
             }
             KeyCode::Tab => {
@@ -317,6 +317,11 @@ impl App {
         } else {
             eprintln!("✗ Database not connected");
         }
+    }
+
+    fn clear_editor(&mut self) {
+        self.editor.clear();
+        self.cursor = 0;
     }
 }
 
