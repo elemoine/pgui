@@ -24,13 +24,13 @@ pub fn format_column_value(row: &PgRow, idx: usize) -> String {
     }
 
     match row.columns()[idx].type_info().name() {
-        "INT2"                        => get!(i16),
-        "INT4"                        => get!(i32),
-        "INT8"                        => get!(i64),
-        "FLOAT4"                      => get!(f32),
-        "FLOAT8"                      => get!(f64),
-        "BOOL"                        => get!(bool),
+        "INT2" => get!(i16),
+        "INT4" => get!(i32),
+        "INT8" => get!(i64),
+        "FLOAT4" => get!(f32),
+        "FLOAT8" => get!(f64),
+        "BOOL" => get!(bool),
         "TEXT" | "VARCHAR" | "BPCHAR" => get!(String),
-        _                             => "?".into(),
+        _ => "?".into(),
     }
 }
