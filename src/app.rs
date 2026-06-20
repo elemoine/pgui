@@ -70,7 +70,6 @@ impl App {
     pub async fn with_db(mut self) -> color_eyre::Result<Self> {
         match PgPool::connect(DATABASE_URL).await {
             Ok(pool) => {
-                eprintln!("✓ Connected to database");
                 self.db_pool = Some(pool);
             }
             Err(e) => {
@@ -312,7 +311,6 @@ impl App {
         if let Some(pool) = &self.db_pool {
             let editor = self.editor.clone();
             let pool = pool.clone();
-            eprintln!("→ Executing query...");
             self.query_task = Some(tokio::spawn(async move {
                 db::execute_query(&editor, pool).await
             }));

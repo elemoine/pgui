@@ -5,12 +5,8 @@ const NULL_REPR: &str = "NULL";
 
 /// Execute a SQL query against the database pool.
 pub async fn execute_query(sql: &str, pool: PgPool) -> color_eyre::Result<Vec<PgRow>> {
-    eprintln!("  Sending query...");
-    let start = std::time::Instant::now();
     let q = sqlx::query(sql);
     let rows = q.fetch_all(&pool).await?;
-    let elapsed = start.elapsed();
-    eprintln!("✓ Query completed in {:.2}s ({} rows)", elapsed.as_secs_f64(), rows.len());
     Ok(rows)
 }
 
