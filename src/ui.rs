@@ -230,9 +230,14 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
                 }
             }
 
+            let inner_height = area.height.saturating_sub(2);
+            let max_scroll = (lines.len() as u16).saturating_sub(inner_height);
+            app.columns_scroll = app.columns_scroll.min(max_scroll);
+
             let p = Paragraph::new(Text::from(lines))
                 .block(pane_block(title.as_str(), focused))
-                .wrap(Wrap { trim: false });
+                .wrap(Wrap { trim: false })
+                .scroll((app.columns_scroll, 0));
             frame.render_widget(p, area);
         }
     }

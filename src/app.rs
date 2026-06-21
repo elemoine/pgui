@@ -39,6 +39,8 @@ pub struct App {
     pub right_view: RightView,
     /// Columns of the currently inspected table
     pub columns: Option<Vec<db::ColumnInfo>>,
+    /// Vertical scroll position in the columns view
+    pub columns_scroll: u16,
     /// Database connection pool
     db_pool: Option<PgPool>,
     /// Running query task
@@ -78,6 +80,7 @@ impl App {
             table_list_state,
             right_view: RightView::List,
             columns: None,
+            columns_scroll: 0,
             db_pool: None,
             query_task: None,
             refresh_tables_task: None,
@@ -336,6 +339,7 @@ impl App {
                     if let Some(table) = selected {
                         self.right_view = RightView::Details(table.clone());
                         self.columns = None;
+                        self.columns_scroll = 0;
                         self.spawn_list_columns(table);
                     }
                 }
@@ -357,6 +361,18 @@ impl App {
                 KeyCode::Esc | KeyCode::Backspace => {
                     self.right_view = RightView::List;
                     self.columns = None;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.columns_scroll = self.columns_scroll.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.columns_scroll = self.columns_scroll.saturating_add(1);
+                }
+                KeyCode::PageUp => {
+                    self.columns_scroll = self.columns_scroll.saturating_sub(5);
+                }
+                KeyCode::PageDown => {
+                    self.columns_scroll = self.columns_scroll.saturating_add(5);
                 }
                 _ => {}
             },
