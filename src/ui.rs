@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Text},
     widgets::{Block, BorderType, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
     Frame,
 };
@@ -162,8 +162,7 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
 
                 let n = num_cols
                     .saturating_sub(col_offset)
-                    .min(MAX_VISIBLE_COLS)
-                    .max(1);
+                    .clamp(1, MAX_VISIBLE_COLS);
                 let widths: Vec<Constraint> = (0..n).map(|_| Constraint::Fill(1)).collect();
                 let table = Table::new(rows, widths)
                     .header(header)
@@ -182,7 +181,7 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
             let items: Vec<ListItem> = app
                 .tables
                 .iter()
-                .map(|t| ListItem::new(t.name.as_str()))
+                .map(|t| ListItem::new(t.as_str()))
                 .collect();
             let list = List::new(items)
                 .block(pane_block("Tables — Press Enter to inspect", focused))
@@ -197,42 +196,44 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
         }
         RightView::Details(i) => {
             let table = &app.tables[i];
-            let title = format!("Table: {} — Press Esc to go back", table.name);
+            let title = format!("Table: {} — Press Esc to go back", table);
             let mut lines: Vec<Line> = Vec::new();
 
             lines.push(Line::styled(
                 "Columns",
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
-            for col in &table.columns {
-                let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(col.name.as_str(), Style::new().fg(Color::Cyan)),
-                    Span::raw("  "),
-                    Span::styled(col.data_type.as_str(), Style::new().fg(Color::Green)),
-                    Span::raw("  "),
-                    Span::styled(nullable, Style::new().fg(Color::DarkGray)),
-                ]));
-            }
+            // for col in &table.columns {
+            //     let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
+            //     lines.push(Line::from(vec![
+            //         Span::raw("  "),
+            //         Span::styled(col.name.as_str(), Style::new().fg(Color::Cyan)),
+            //         Span::raw("  "),
+            //         Span::styled(col.data_type.as_str(), Style::new().fg(Color::Green)),
+            //         Span::raw("  "),
+            //         Span::styled(nullable, Style::new().fg(Color::DarkGray)),
+            //     ]));
+            // }
             lines.push(Line::from(""));
 
             lines.push(Line::styled(
                 "Indexes",
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
-            for idx in &table.indexes {
-                let unique = if idx.unique { "UNIQUE" } else { "      " };
-                lines.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(idx.name.as_str(), Style::new().fg(Color::Cyan)),
-                    Span::raw("  "),
-                    Span::styled(unique, Style::new().fg(Color::Magenta)),
-                    Span::raw("  ("),
-                    Span::raw(idx.columns.join(", ")),
-                    Span::raw(")"),
-                ]));
-            }
+            // for idx in &table.indexes {
+            //     let unique = if idx.unique { "UNIQUE" } else { "      " };
+            //     lines.push(Line::from(vec![
+            //         Span::raw("  "),
+            //         Span::styled(idx.name.as_str(), Style::new().fg(Color::Cyan)),
+            //         Span::raw("  "),
+            //         Span::styled(unique, Style::new().fg(Color::Magenta)),
+            //         Span::raw("  ("),
+            //         Span::raw(idx.columns.join(", ")),
+            //         Span::raw(")"),
+            //     ]));
+            // }
+
+            lines.clear();
 
             let p = Paragraph::new(Text::from(lines))
                 .block(pane_block(title.as_str(), focused))

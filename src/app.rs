@@ -6,6 +6,7 @@ use ratatui::widgets::ListState;
 use ratatui::DefaultTerminal;
 use sqlx::postgres::PgRow;
 use sqlx::{PgPool, Row};
+use tokio::time::{self, Duration};
 
 use crate::db;
 use crate::ui::{Focus, MockColumn, MockIndex, MockTable, RightView};
@@ -29,7 +30,7 @@ pub struct App {
     /// Horizontal scroll position in results
     pub results_scroll_x: u16,
     /// Available tables
-    pub tables: Vec<MockTable>,
+    pub tables: Vec<String>,
     /// Table list selection state
     pub table_list_state: ListState,
     /// Right pane view mode
@@ -38,16 +39,24 @@ pub struct App {
     db_pool: Option<PgPool>,
     /// Running query task
     query_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<PgRow>>>>,
+    /// Running refresh tables task
+    refresh_tables_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<String>>>>,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
     /// Constructs a new instance of [`App`].
     pub fn new() -> Self {
-        let tables = mock_tables();
-        let mut table_list_state = ListState::default();
-        if !tables.is_empty() {
-            table_list_state.select(Some(0));
-        }
+        let tables = Vec::new();
+        let table_list_state = ListState::default();
+        // if !tables.is_empty() {
+        //     table_list_state.select(Some(0));
+        // }
         let editor = String::new();
         let cursor = 0;
         Self {
@@ -63,6 +72,7 @@ impl App {
             right_view: RightView::List,
             db_pool: None,
             query_task: None,
+            refresh_tables_task: None,
         }
     }
 
@@ -87,8 +97,16 @@ impl App {
             crate::ui::render(frame, &mut self);
         })?;
 
+        let mut interval = time::interval(Duration::from_millis(500));
+
         loop {
             tokio::select! {
+                _ = interval.tick() => {
+                    self.spawn_refresh_tables();
+                    terminal.draw(|frame| {
+                        crate::ui::render(frame, &mut self);
+                    })?;
+                }
                 Some(Ok(event)) = event_stream.next() => {
                     match event {
                         CrosstermEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -121,6 +139,32 @@ impl App {
                         }
                     }
                     self.query_task = None;
+                    terminal.draw(|frame| {
+                        crate::ui::render(frame, &mut self);
+                    })?;
+                }
+                refresh_table_result = async {
+                    if let Some(task) = &mut self.refresh_tables_task {
+                        task.await
+                    } else {
+                        std::future::pending().await
+                    }
+                }, if self.refresh_tables_task.is_some() => {
+                    match refresh_table_result {
+                        Ok(Ok(tables)) => {
+                            self.tables = tables;
+                            if !self.tables.is_empty() && self.table_list_state.selected().is_none() {
+                                self.table_list_state.select(Some(0));
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("✗ Refresh tables error: {}", e);
+                        }
+                        Err(e) => {
+                            eprintln!("✗ Task error: {}", e);
+                        }
+                    }
+                    self.refresh_tables_task = None;
                     terminal.draw(|frame| {
                         crate::ui::render(frame, &mut self);
                     })?;
@@ -200,20 +244,17 @@ impl App {
                 self.editor.insert(self.cursor, '\n');
                 self.cursor += 1;
             }
-            KeyCode::Backspace
-                if self.cursor > 0 => {
-                    let prev = prev_char_boundary(&self.editor, self.cursor);
-                    self.editor.replace_range(prev..self.cursor, "");
-                    self.cursor = prev;
-                }
-            KeyCode::Left
-                if self.cursor > 0 => {
-                    self.cursor = prev_char_boundary(&self.editor, self.cursor);
-                }
-            KeyCode::Right
-                if self.cursor < self.editor.len() => {
-                    self.cursor = next_char_boundary(&self.editor, self.cursor);
-                }
+            KeyCode::Backspace if self.cursor > 0 => {
+                let prev = prev_char_boundary(&self.editor, self.cursor);
+                self.editor.replace_range(prev..self.cursor, "");
+                self.cursor = prev;
+            }
+            KeyCode::Left if self.cursor > 0 => {
+                self.cursor = prev_char_boundary(&self.editor, self.cursor);
+            }
+            KeyCode::Right if self.cursor < self.editor.len() => {
+                self.cursor = next_char_boundary(&self.editor, self.cursor);
+            }
             KeyCode::Home => self.cursor = line_start(&self.editor, self.cursor),
             KeyCode::End => self.cursor = line_end(&self.editor, self.cursor),
             _ => {}
@@ -316,6 +357,16 @@ impl App {
         }
     }
 
+    fn spawn_refresh_tables(&mut self) {
+        if let Some(pool) = &self.db_pool {
+            let pool = pool.clone();
+            self.refresh_tables_task =
+                Some(tokio::spawn(async move { db::list_tables(pool).await }));
+        } else {
+            eprintln!("✗ Database not connected");
+        }
+    }
+
     fn clear_editor(&mut self) {
         self.editor.clear();
         self.cursor = 0;
@@ -349,6 +400,7 @@ fn line_end(text: &str, cursor: usize) -> usize {
     }
 }
 
+#[allow(dead_code)]
 fn mock_tables() -> Vec<MockTable> {
     vec![
         MockTable {

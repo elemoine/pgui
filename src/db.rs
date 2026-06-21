@@ -10,6 +10,16 @@ pub async fn execute_query(sql: &str, pool: PgPool) -> color_eyre::Result<Vec<Pg
     Ok(rows)
 }
 
+pub async fn list_tables(pool: PgPool) -> color_eyre::Result<Vec<String>> {
+    let sql = "SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name";
+    let rows = execute_query(sql, pool).await?;
+    let tables = rows
+        .into_iter()
+        .map(|row| row.try_get::<String, _>(0).unwrap_or_default())
+        .collect();
+    Ok(tables)
+}
+
 /// Format a cell value from a row.
 pub fn format_column_value(row: &PgRow, idx: usize) -> String {
     use sqlx::{Column as _, TypeInfo as _};
