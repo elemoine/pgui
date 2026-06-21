@@ -231,6 +231,12 @@ impl App {
                 self.clear_editor();
                 return Ok(());
             }
+            KeyCode::Char('e') if ctrl => {
+                if let Some(table) = self.selected_table() {
+                    self.set_editor(format!("select * from {}", table));
+                }
+                return Ok(());
+            }
             KeyCode::Tab => {
                 self.cycle_focus_forward();
                 return Ok(());
@@ -379,6 +385,20 @@ impl App {
         }
     }
 
+    /// The table currently selected in the right pane, if any.
+    ///
+    /// In the details view this is the inspected table; in the list view it is
+    /// the highlighted entry of the filtered list.
+    fn selected_table(&self) -> Option<String> {
+        match &self.right_view {
+            RightView::Details(table) => Some(table.clone()),
+            RightView::List => self
+                .table_list_state
+                .selected()
+                .and_then(|i| self.filtered_tables().get(i).map(|t| (*t).clone())),
+        }
+    }
+
     /// Tables matching the current filter (case-insensitive substring).
     pub fn filtered_tables(&self) -> Vec<&String> {
         if self.table_filter.is_empty() {
@@ -483,6 +503,11 @@ impl App {
     fn clear_editor(&mut self) {
         self.editor.clear();
         self.cursor = 0;
+    }
+
+    fn set_editor(&mut self, content: String) {
+        self.cursor = content.len();
+        self.editor = content;
     }
 }
 

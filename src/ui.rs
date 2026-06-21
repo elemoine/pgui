@@ -245,7 +245,7 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_help(frame: &mut Frame, area: Rect) {
     let help = Paragraph::new(
-        " Tab/Shift-Tab: switch pane │ Ctrl-R: run │ Enter: open table │ Esc: back │ Ctrl-Q: quit",
+        " Tab/Shift-Tab: switch pane │ Ctrl-R: run │ Ctrl-E: select * from table │ Enter: open table │ Esc: back │ Ctrl-Q: quit",
     )
     .style(Style::new().fg(Color::DarkGray));
     frame.render_widget(help, area);
