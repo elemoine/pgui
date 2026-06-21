@@ -58,6 +58,8 @@ pub fn format_column_value(row: &PgRow, idx: usize) -> String {
         };
     }
 
+    use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+
     match row.columns()[idx].type_info().name() {
         "INT2" => get!(i16),
         "INT4" => get!(i32),
@@ -66,6 +68,10 @@ pub fn format_column_value(row: &PgRow, idx: usize) -> String {
         "FLOAT8" => get!(f64),
         "BOOL" => get!(bool),
         "TEXT" | "VARCHAR" | "BPCHAR" => get!(String),
+        "DATE" => get!(NaiveDate),
+        "TIME" => get!(NaiveTime),
+        "TIMESTAMP" => get!(NaiveDateTime),
+        "TIMESTAMPTZ" => get!(DateTime<Utc>),
         _ => "?".into(),
     }
 }
