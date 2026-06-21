@@ -9,7 +9,7 @@ use sqlx::{PgPool, Row};
 use tokio::time::{self, Duration};
 
 use crate::db;
-use crate::ui::{Focus, MockColumn, MockIndex, MockTable, RightView};
+use crate::ui::{Focus, RightView};
 
 const DATABASE_URL: &str = "postgres://alma:almaalma@localhost:5432/alma_db";
 
@@ -35,12 +35,16 @@ pub struct App {
     pub table_list_state: ListState,
     /// Right pane view mode
     pub right_view: RightView,
+    /// Columns of the currently inspected table
+    pub columns: Option<Vec<db::ColumnInfo>>,
     /// Database connection pool
     db_pool: Option<PgPool>,
     /// Running query task
     query_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<PgRow>>>>,
     /// Running refresh tables task
     refresh_tables_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<String>>>>,
+    /// Running list columns task
+    list_columns_task: Option<tokio::task::JoinHandle<color_eyre::Result<Vec<db::ColumnInfo>>>>,
 }
 
 impl Default for App {
@@ -70,9 +74,11 @@ impl App {
             tables,
             table_list_state,
             right_view: RightView::List,
+            columns: None,
             db_pool: None,
             query_task: None,
             refresh_tables_task: None,
+            list_columns_task: None,
         }
     }
 
@@ -165,6 +171,29 @@ impl App {
                         }
                     }
                     self.refresh_tables_task = None;
+                    terminal.draw(|frame| {
+                        crate::ui::render(frame, &mut self);
+                    })?;
+                }
+                list_columns_result = async {
+                    if let Some(task) = &mut self.list_columns_task {
+                        task.await
+                    } else {
+                        std::future::pending().await
+                    }
+                }, if self.list_columns_task.is_some() => {
+                    match list_columns_result {
+                        Ok(Ok(columns)) => {
+                            self.columns = Some(columns);
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("✗ List columns error: {}", e);
+                        }
+                        Err(e) => {
+                            eprintln!("✗ Task error: {}", e);
+                        }
+                    }
+                    self.list_columns_task = None;
                     terminal.draw(|frame| {
                         crate::ui::render(frame, &mut self);
                     })?;
@@ -301,12 +330,18 @@ impl App {
                 KeyCode::Enter => {
                     if let Some(i) = self.table_list_state.selected() {
                         self.right_view = RightView::Details(i);
+                        self.columns = None;
+                        let table = self.tables[i].clone();
+                        self.spawn_list_columns(table);
                     }
                 }
                 _ => {}
             },
             RightView::Details(_) => match key.code {
-                KeyCode::Esc | KeyCode::Backspace => self.right_view = RightView::List,
+                KeyCode::Esc | KeyCode::Backspace => {
+                    self.right_view = RightView::List;
+                    self.columns = None;
+                }
                 _ => {}
             },
         }
@@ -367,6 +402,18 @@ impl App {
         }
     }
 
+    fn spawn_list_columns(&mut self, table: String) {
+        if let Some(pool) = &self.db_pool {
+            let pool = pool.clone();
+            self.list_columns_task =
+                Some(tokio::spawn(
+                    async move { db::list_columns(&table, pool).await },
+                ));
+        } else {
+            eprintln!("✗ Database not connected");
+        }
+    }
+
     fn clear_editor(&mut self) {
         self.editor.clear();
         self.cursor = 0;
@@ -398,131 +445,4 @@ fn line_end(text: &str, cursor: usize) -> usize {
         Some(off) => cursor + off,
         None => text.len(),
     }
-}
-
-#[allow(dead_code)]
-fn mock_tables() -> Vec<MockTable> {
-    vec![
-        MockTable {
-            name: "users".into(),
-            columns: vec![
-                MockColumn {
-                    name: "id".into(),
-                    data_type: "bigint".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "email".into(),
-                    data_type: "text".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "created_at".into(),
-                    data_type: "timestamptz".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "deleted_at".into(),
-                    data_type: "timestamptz".into(),
-                    nullable: true,
-                },
-            ],
-            indexes: vec![
-                MockIndex {
-                    name: "users_pkey".into(),
-                    columns: vec!["id".into()],
-                    unique: true,
-                },
-                MockIndex {
-                    name: "users_email_idx".into(),
-                    columns: vec!["email".into()],
-                    unique: true,
-                },
-            ],
-        },
-        MockTable {
-            name: "orders".into(),
-            columns: vec![
-                MockColumn {
-                    name: "id".into(),
-                    data_type: "bigint".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "user_id".into(),
-                    data_type: "bigint".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "amount_cents".into(),
-                    data_type: "integer".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "status".into(),
-                    data_type: "text".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "created_at".into(),
-                    data_type: "timestamptz".into(),
-                    nullable: false,
-                },
-            ],
-            indexes: vec![
-                MockIndex {
-                    name: "orders_pkey".into(),
-                    columns: vec!["id".into()],
-                    unique: true,
-                },
-                MockIndex {
-                    name: "orders_user_id_idx".into(),
-                    columns: vec!["user_id".into()],
-                    unique: false,
-                },
-                MockIndex {
-                    name: "orders_status_idx".into(),
-                    columns: vec!["status".into()],
-                    unique: false,
-                },
-            ],
-        },
-        MockTable {
-            name: "products".into(),
-            columns: vec![
-                MockColumn {
-                    name: "id".into(),
-                    data_type: "bigint".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "sku".into(),
-                    data_type: "text".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "name".into(),
-                    data_type: "text".into(),
-                    nullable: false,
-                },
-                MockColumn {
-                    name: "price_cents".into(),
-                    data_type: "integer".into(),
-                    nullable: false,
-                },
-            ],
-            indexes: vec![
-                MockIndex {
-                    name: "products_pkey".into(),
-                    columns: vec!["id".into()],
-                    unique: true,
-                },
-                MockIndex {
-                    name: "products_sku_key".into(),
-                    columns: vec!["sku".into()],
-                    unique: true,
-                },
-            ],
-        },
-    ]
 }

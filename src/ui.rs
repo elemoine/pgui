@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Text},
+    text::{Line, Span, Text},
     widgets::{Block, BorderType, Cell, List, ListItem, Paragraph, Row, Table, Wrap},
     Frame,
 };
@@ -23,27 +23,6 @@ pub enum Focus {
 pub enum RightView {
     List,
     Details(usize),
-}
-
-#[derive(Clone)]
-pub struct MockColumn {
-    pub name: String,
-    pub data_type: String,
-    pub nullable: bool,
-}
-
-#[derive(Clone)]
-pub struct MockIndex {
-    pub name: String,
-    pub columns: Vec<String>,
-    pub unique: bool,
-}
-
-#[derive(Clone)]
-pub struct MockTable {
-    pub name: String,
-    pub columns: Vec<MockColumn>,
-    pub indexes: Vec<MockIndex>,
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -203,37 +182,39 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
                 "Columns",
                 Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
             ));
-            // for col in &table.columns {
-            //     let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
-            //     lines.push(Line::from(vec![
-            //         Span::raw("  "),
-            //         Span::styled(col.name.as_str(), Style::new().fg(Color::Cyan)),
-            //         Span::raw("  "),
-            //         Span::styled(col.data_type.as_str(), Style::new().fg(Color::Green)),
-            //         Span::raw("  "),
-            //         Span::styled(nullable, Style::new().fg(Color::DarkGray)),
-            //     ]));
-            // }
-            lines.push(Line::from(""));
 
-            lines.push(Line::styled(
-                "Indexes",
-                Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-            ));
-            // for idx in &table.indexes {
-            //     let unique = if idx.unique { "UNIQUE" } else { "      " };
-            //     lines.push(Line::from(vec![
-            //         Span::raw("  "),
-            //         Span::styled(idx.name.as_str(), Style::new().fg(Color::Cyan)),
-            //         Span::raw("  "),
-            //         Span::styled(unique, Style::new().fg(Color::Magenta)),
-            //         Span::raw("  ("),
-            //         Span::raw(idx.columns.join(", ")),
-            //         Span::raw(")"),
-            //     ]));
-            // }
-
-            lines.clear();
+            match &app.columns {
+                None => {
+                    lines.push(Line::styled("  loading…", Style::new().fg(Color::DarkGray)));
+                }
+                Some(columns) if columns.is_empty() => {
+                    lines.push(Line::styled(
+                        "  (no columns)",
+                        Style::new().fg(Color::DarkGray),
+                    ));
+                }
+                Some(columns) => {
+                    let name_width = columns.iter().map(|c| c.name.len()).max().unwrap_or(0);
+                    let type_width = columns.iter().map(|c| c.data_type.len()).max().unwrap_or(0);
+                    for col in columns {
+                        let nullable = if col.nullable { "NULL" } else { "NOT NULL" };
+                        lines.push(Line::from(vec![
+                            Span::raw("  "),
+                            Span::styled(
+                                format!("{:<name_width$}", col.name),
+                                Style::new().fg(Color::Cyan),
+                            ),
+                            Span::raw("  "),
+                            Span::styled(
+                                format!("{:<type_width$}", col.data_type),
+                                Style::new().fg(Color::Green),
+                            ),
+                            Span::raw("  "),
+                            Span::styled(nullable, Style::new().fg(Color::DarkGray)),
+                        ]));
+                    }
+                }
+            }
 
             let p = Paragraph::new(Text::from(lines))
                 .block(pane_block(title.as_str(), focused))

@@ -20,6 +20,31 @@ pub async fn list_tables(pool: PgPool) -> color_eyre::Result<Vec<String>> {
     Ok(tables)
 }
 
+/// Information about a single column of a table.
+pub struct ColumnInfo {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+}
+
+/// List the columns of a table in the `public` schema.
+pub async fn list_columns(table: &str, pool: PgPool) -> color_eyre::Result<Vec<ColumnInfo>> {
+    let sql = "SELECT column_name, data_type, is_nullable \
+               FROM information_schema.columns \
+               WHERE table_schema = 'public' AND table_name = $1 \
+               ORDER BY ordinal_position";
+    let rows = sqlx::query(sql).bind(table).fetch_all(&pool).await?;
+    let columns = rows
+        .into_iter()
+        .map(|row| ColumnInfo {
+            name: row.try_get::<String, _>("column_name").unwrap_or_default(),
+            data_type: row.try_get::<String, _>("data_type").unwrap_or_default(),
+            nullable: row.try_get::<String, _>("is_nullable").unwrap_or_default() == "YES",
+        })
+        .collect();
+    Ok(columns)
+}
+
 /// Format a cell value from a row.
 pub fn format_column_value(row: &PgRow, idx: usize) -> String {
     use sqlx::{Column as _, TypeInfo as _};
