@@ -2,6 +2,8 @@
 
 A minimal terminal UI for PostgreSQL. Browse tables, inspect columns, and run SQL — all from the keyboard.
 
+![pgui screenshot](./screenshot.png)
+
 ## Features
 
 - Browse and filter the tables in your database
