@@ -19,10 +19,10 @@ pub enum Focus {
     Right,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum RightView {
     List,
-    Details(usize),
+    Details(String),
 }
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -155,15 +155,30 @@ fn render_results(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
     let focused = app.focus == Focus::Right;
-    match app.right_view {
+    match app.right_view.clone() {
         RightView::List => {
-            let items: Vec<ListItem> = app
-                .tables
-                .iter()
-                .map(|t| ListItem::new(t.as_str()))
-                .collect();
+            let [filter_area, list_area] =
+                Layout::vertical([Constraint::Length(3), Constraint::Fill(1)]).areas(area);
+
+            let filter_block = pane_block("Filter — type to search, Esc to clear", focused);
+            let filter_inner = filter_block.inner(filter_area);
+            let filter = Paragraph::new(app.table_filter.as_str()).block(filter_block);
+            frame.render_widget(filter, filter_area);
+
+            if focused {
+                let x = filter_inner
+                    .x
+                    .saturating_add(app.table_filter.chars().count() as u16);
+                if x < filter_inner.right() {
+                    frame.set_cursor_position(Position::new(x, filter_inner.y));
+                }
+            }
+
+            let filtered: Vec<String> = app.filtered_tables().into_iter().cloned().collect();
+            let title = format!("Tables ({}) — Enter to inspect", filtered.len());
+            let items: Vec<ListItem> = filtered.iter().map(|t| ListItem::new(t.clone())).collect();
             let list = List::new(items)
-                .block(pane_block("Tables — Press Enter to inspect", focused))
+                .block(pane_block(&title, focused))
                 .highlight_symbol(" > ")
                 .highlight_style(
                     Style::new()
@@ -171,10 +186,9 @@ fn render_right(frame: &mut Frame, app: &mut App, area: Rect) {
                         .bg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 );
-            frame.render_stateful_widget(list, area, &mut app.table_list_state);
+            frame.render_stateful_widget(list, list_area, &mut app.table_list_state);
         }
-        RightView::Details(i) => {
-            let table = &app.tables[i];
+        RightView::Details(table) => {
             let title = format!("Table: {} — Press Esc to go back", table);
             let mut lines: Vec<Line> = Vec::new();
 

@@ -31,6 +31,8 @@ pub struct App {
     pub results_scroll_x: u16,
     /// Available tables
     pub tables: Vec<String>,
+    /// Filter text applied to the table list
+    pub table_filter: String,
     /// Table list selection state
     pub table_list_state: ListState,
     /// Right pane view mode
@@ -72,6 +74,7 @@ impl App {
             results_scroll_y: 0,
             results_scroll_x: 0,
             tables,
+            table_filter: String::new(),
             table_list_state,
             right_view: RightView::List,
             columns: None,
@@ -159,9 +162,7 @@ impl App {
                     match refresh_table_result {
                         Ok(Ok(tables)) => {
                             self.tables = tables;
-                            if !self.tables.is_empty() && self.table_list_state.selected().is_none() {
-                                self.table_list_state.select(Some(0));
-                            }
+                            self.clamp_table_selection();
                         }
                         Ok(Err(e)) => {
                             eprintln!("✗ Refresh tables error: {}", e);
@@ -325,15 +326,30 @@ impl App {
     fn handle_right_key(&mut self, key: KeyEvent) {
         match self.right_view {
             RightView::List => match key.code {
-                KeyCode::Down | KeyCode::Char('j') => self.select_next_table(),
-                KeyCode::Up | KeyCode::Char('k') => self.select_prev_table(),
+                KeyCode::Down => self.select_next_table(),
+                KeyCode::Up => self.select_prev_table(),
                 KeyCode::Enter => {
-                    if let Some(i) = self.table_list_state.selected() {
-                        self.right_view = RightView::Details(i);
+                    let selected = self
+                        .table_list_state
+                        .selected()
+                        .and_then(|i| self.filtered_tables().get(i).map(|t| (*t).clone()));
+                    if let Some(table) = selected {
+                        self.right_view = RightView::Details(table.clone());
                         self.columns = None;
-                        let table = self.tables[i].clone();
                         self.spawn_list_columns(table);
                     }
+                }
+                KeyCode::Esc if !self.table_filter.is_empty() => {
+                    self.table_filter.clear();
+                    self.reset_table_selection();
+                }
+                KeyCode::Backspace => {
+                    self.table_filter.pop();
+                    self.reset_table_selection();
+                }
+                KeyCode::Char(c) => {
+                    self.table_filter.push(c);
+                    self.reset_table_selection();
                 }
                 _ => {}
             },
@@ -347,25 +363,59 @@ impl App {
         }
     }
 
+    /// Tables matching the current filter (case-insensitive substring).
+    pub fn filtered_tables(&self) -> Vec<&String> {
+        if self.table_filter.is_empty() {
+            return self.tables.iter().collect();
+        }
+        let needle = self.table_filter.to_lowercase();
+        self.tables
+            .iter()
+            .filter(|t| t.to_lowercase().contains(&needle))
+            .collect()
+    }
+
+    /// Reset the selection to the first filtered table (called when the filter changes).
+    fn reset_table_selection(&mut self) {
+        if self.filtered_tables().is_empty() {
+            self.table_list_state.select(None);
+        } else {
+            self.table_list_state.select(Some(0));
+        }
+    }
+
+    /// Keep the selection within the bounds of the filtered list.
+    fn clamp_table_selection(&mut self) {
+        let len = self.filtered_tables().len();
+        match self.table_list_state.selected() {
+            _ if len == 0 => self.table_list_state.select(None),
+            None => self.table_list_state.select(Some(0)),
+            Some(i) if i >= len => self.table_list_state.select(Some(len - 1)),
+            Some(_) => {}
+        }
+    }
+
     fn select_next_table(&mut self) {
-        if self.tables.is_empty() {
+        let len = self.filtered_tables().len();
+        if len == 0 {
             return;
         }
         let i = match self.table_list_state.selected() {
-            Some(i) => (i + 1) % self.tables.len(),
+            Some(i) => (i + 1) % len,
             None => 0,
         };
         self.table_list_state.select(Some(i));
     }
 
     fn select_prev_table(&mut self) {
-        if self.tables.is_empty() {
+        let len = self.filtered_tables().len();
+        if len == 0 {
             return;
         }
         let i = match self.table_list_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.tables.len() - 1
+                    len - 1
                 } else {
                     i - 1
                 }
