@@ -11,7 +11,8 @@ use tokio::time::{self, Duration};
 use crate::db;
 use crate::ui::{Focus, RightView};
 
-const DATABASE_URL: &str = "postgres://alma:almaalma@localhost:5432/alma_db";
+/// Environment variable holding the PostgreSQL connection string.
+const DATABASE_URL_ENV: &str = "DATABASE_URL";
 
 /// Application.
 pub struct App {
@@ -90,7 +91,10 @@ impl App {
 
     /// Initialize the app with a database pool.
     pub async fn with_db(mut self) -> color_eyre::Result<Self> {
-        match PgPool::connect(DATABASE_URL).await {
+        let database_url = std::env::var(DATABASE_URL_ENV).map_err(|_| {
+            color_eyre::eyre::eyre!("{DATABASE_URL_ENV} environment variable must be set")
+        })?;
+        match PgPool::connect(&database_url).await {
             Ok(pool) => {
                 self.db_pool = Some(pool);
             }
